@@ -9,8 +9,10 @@ USER_AGENT = ('Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:50.0) Gecko/20100101 F
 URL_FOR_REQUESTS: str = "https://zakupki.gov.ru/epz/order/extendedsearch/results.html?fz44=on&pageNumber="
 URL_FOR_PRINT_XML: str = "https://zakupki.gov.ru/epz/order/notice/printForm/viewXml.html?regNumber="
 URL_FOR_SEARCH_ON_PAGE: str = "/epz/order/notice/printForm/view.html?regNumber="
-NUMBER_OF_ATTEMPTS_CONNECT: int = 5
+
+
 PAUSE_SEK: int = 5
+NUMBER_OF_ATTEMPTS_CONNECT: int = 5
 
 
 app = Celery('site_parsing')
@@ -57,7 +59,7 @@ def requesting_data_from_print_form(self, reg_number: str) -> None:
                 print(f"link: {link_print_xml} , "
                       f"Статус запроса: {response.status_code} , "
                       f"Попытка № {repetition_counter} ;")
-                
+
                 # что бы не получить 429:
                 time.sleep(PAUSE_SEK)
 
@@ -89,10 +91,9 @@ def requesting_data_from_page(self, page_namber: str) -> None:
                 for all_tag_a in soup.find_all('a', href=True):
 
                     if URL_FOR_SEARCH_ON_PAGE in all_tag_a['href']:
-
                         reg_number: str = \
                             str(all_tag_a['href']).split(URL_FOR_SEARCH_ON_PAGE)[1]
-                        
+
                         requesting_data_from_print_form.delay(reg_number)
 
                 return None
@@ -102,7 +103,7 @@ def requesting_data_from_page(self, page_namber: str) -> None:
                 print(f"link: {link_page} , "
                       f"Статус запроса: {response.status_code} , "
                       f"Попытка № {repetition_counter} ;")
-                
+
                 # что бы не получить ошибку 429 при
                 # слишком быстром повторном подключении
                 # если предыдущий response был не удачным
@@ -113,7 +114,7 @@ def requesting_data_from_page(self, page_namber: str) -> None:
             # вместо логера (вывод кода ошибки при соединении):
             print(f"link: {link_page} , Ошибка: {error}")
 
-            # повторное выполнение всей задачи 
+            # повторное выполнение всей задачи
             # после паузы при ConnectionError
             self.retry(exc=error, countdown=PAUSE_SEK)
 
@@ -121,8 +122,7 @@ def requesting_data_from_page(self, page_namber: str) -> None:
 
 
 def start_parsing(start: int, stop: int) -> None:
-
-    for num_page in range(start, stop+1):
+    for num_page in range(start, stop + 1):
         requesting_data_from_page.delay(str(num_page))
 
 
