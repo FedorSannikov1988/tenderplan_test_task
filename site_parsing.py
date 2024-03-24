@@ -5,11 +5,12 @@ from celery import Celery
 from bs4 import BeautifulSoup
 
 
+USER_AGENT = ('Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:50.0) Gecko/20100101 Firefox/50.0')
 URL_FOR_REQUESTS: str = "https://zakupki.gov.ru/epz/order/extendedsearch/results.html?fz44=on&pageNumber="
 URL_FOR_PRINT_XML: str = "https://zakupki.gov.ru/epz/order/notice/printForm/viewXml.html?regNumber="
 URL_FOR_SEARCH_ON_PAGE: str = "/epz/order/notice/printForm/view.html?regNumber="
 NUMBER_OF_ATTEMPTS_CONNECT: int = 5
-PAUSE_SEK: int = 2
+PAUSE_SEK: int = 5
 
 
 app = Celery('site_parsing')
@@ -18,14 +19,15 @@ app = Celery('site_parsing')
 @app.task(bind=True, max_retries=NUMBER_OF_ATTEMPTS_CONNECT)
 def requesting_data_from_print_form(self, reg_number: str) -> None:
 
-    link_print_xml: str = URL_FOR_PRINT_XML + reg_number
-
     repetition_counter: int = 1
+
+    link_print_xml: str = URL_FOR_PRINT_XML + reg_number
 
     while repetition_counter != NUMBER_OF_ATTEMPTS_CONNECT + 1:
 
         try:
-            response = requests.get(link_print_xml)
+
+            response = requests.get(link_print_xml, headers={'User-Agent': USER_AGENT})
 
             if response.ok:
 
@@ -55,6 +57,9 @@ def requesting_data_from_print_form(self, reg_number: str) -> None:
                 print(f"link: {link_print_xml} , "
                       f"Статус запроса: {response.status_code} , "
                       f"Попытка № {repetition_counter} ;")
+                
+                # что бы не получить 429:
+                time.sleep(PAUSE_SEK)
 
         except ConnectionError as error:
             # вместо логера:
@@ -62,9 +67,6 @@ def requesting_data_from_print_form(self, reg_number: str) -> None:
             self.retry(exc=error, countdown=PAUSE_SEK)
 
         repetition_counter += 1
-
-        # что бы не получить 429:
-        time.sleep(PAUSE_SEK)
 
 
 @app.task(bind=True, max_retries=NUMBER_OF_ATTEMPTS_CONNECT)
@@ -77,7 +79,8 @@ def requesting_data_from_page(self, page_namber: str) -> None:
     while repetition_counter != NUMBER_OF_ATTEMPTS_CONNECT + 1:
 
         try:
-            response = requests.get(link_page)
+
+            response = requests.get(link_page, headers={'User-Agent': USER_AGENT})
 
             if response.ok:
 
@@ -89,28 +92,32 @@ def requesting_data_from_page(self, page_namber: str) -> None:
 
                         reg_number: str = \
                             str(all_tag_a['href']).split(URL_FOR_SEARCH_ON_PAGE)[1]
-
-                        print(reg_number)
-
+                        
                         requesting_data_from_print_form.delay(reg_number)
 
                 return None
 
             else:
-                # вместо логера:
+                # вместо логера (вывод кода ошибки при соединении):
                 print(f"link: {link_page} , "
                       f"Статус запроса: {response.status_code} , "
                       f"Попытка № {repetition_counter} ;")
+                
+                # что бы не получить ошибку 429 при
+                # слишком быстром повторном подключении
+                # если предыдущий response был не удачным
+                time.sleep(PAUSE_SEK)
+
 
         except ConnectionError as error:
-            # вместо логера:
+            # вместо логера (вывод кода ошибки при соединении):
             print(f"link: {link_page} , Ошибка: {error}")
+
+            # повторное выполнение всей задачи 
+            # после паузы при ConnectionError
             self.retry(exc=error, countdown=PAUSE_SEK)
 
         repetition_counter += 1
-
-        # что бы не получить 429:
-        time.sleep(PAUSE_SEK)
 
 
 def start_parsing(start: int, stop: int) -> None:
@@ -121,4 +128,3 @@ def start_parsing(start: int, stop: int) -> None:
 
 if __name__ == "__main__":
     start_parsing(start=1, stop=2)
-
